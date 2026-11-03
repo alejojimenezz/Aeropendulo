@@ -1,0 +1,17 @@
+.vscode/
+
+*.tmp
+*.temp
+*.log
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+*.bak
+*.old
+*.backup
+
+INDICE.md
