@@ -1,5 +1,7 @@
 .vscode/
 
+informe/
+
 *.tmp
 *.temp
 *.log
