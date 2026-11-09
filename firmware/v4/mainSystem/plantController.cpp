@@ -22,9 +22,9 @@ plantController::plantController(plantStatus* plantaPtr) {
     _mgl = 0.0267f;
 
     // Pendientes predefinidas y valores LUT
-    _slopeTorque1 = 0.0121f;//0.008107f;//0.00901f;
+    _slopeTorque1 = 0.0121f;//0.01302f;//0.008107f;//0.00901f;
     _slopeTorque2 = 0.00270f;
-    _b_mot = -0.0081f;//-0.0065//-0.002372f;
+    _b_mot = -0.0081f;//-0.007774f;//-0.0065//-0.002372f;
     // Inicializar la tabla con valores por defecto
     setGlobalPID(1.0, 0.0, 0.0);
 }
@@ -208,7 +208,7 @@ void plantController::PIDcontroller() {
 
     // Ecuación de Torque
     float term_PID = _J * ((_Kp * error_rad) + (_Ki * _integral) - (_Kd * theta_dot));
-    float comp_viscosa = _b * theta_dot;
+    float comp_viscosa = 0*_b * theta_dot;
     float comp_gravedad = _mgl * sin(theta_rad);
 
     float tau_total = term_PID + comp_viscosa + comp_gravedad;
