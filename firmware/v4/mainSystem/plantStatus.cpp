@@ -96,20 +96,19 @@ void plantStatus::updateSensors() {
 // ---------- Sensor Reading y Calibration ----------
 
 void plantStatus::calibrateSensors() {
-    Serial.println("Iniciando calibracion de sensores. Mantenga el sistema quieto...");
-    
+    // Ceros instantáneos sin Serial.print ni bloqueos de delay
     offset_angulo = 0; offset_ax = 0; offset_ay = 0; offset_az = 0;
     offset_gx = 0; offset_gy = 0; offset_gz = 0;
 
     long sum_raw_angle = 0;
-    int num_samples = 100;
+    int num_samples = 20; 
     
     for (int i = 0; i < num_samples; i++) {
-        // Leemos el RAW_ANGLE para el AS5600
         Wire.beginTransmission(0x36); 
         Wire.write(0x0C);             
         Wire.endTransmission(false);
         Wire.requestFrom((uint16_t)0x36, (uint8_t)2, true);
+        
         if (Wire.available() == 2) {
             uint16_t rawAngle = Wire.read() << 8;
             rawAngle |= Wire.read();
@@ -128,17 +127,15 @@ void plantStatus::calibrateSensors() {
         offset_gy += gyro.gyro.y; 
         offset_gz += gyro.gyro.z;
         
-        delay(10);
+        // El delay(10) fue eliminado para evitar desincronizar la telemetría
     }
 
     offset_ax /= num_samples; offset_ay /= num_samples; offset_az /= num_samples;
     offset_gx /= num_samples; offset_gy /= num_samples; offset_gz /= num_samples;
     
-    // Calibración por software limpia:
     uint16_t avg_raw_angle = sum_raw_angle / num_samples;
     offset_angulo = (avg_raw_angle * 360.0f) / 4096.0f;
-    
-    Serial.println("Calibracion por software finalizada.");
+
 }
 
 // ---------- Generador de Perfiles ----------

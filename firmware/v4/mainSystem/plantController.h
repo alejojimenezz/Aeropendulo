@@ -5,7 +5,7 @@
 #include "plantStatus.h"
 
 // Lista de modos para el método setTarget
-enum ControlMode { CTRL_NONE, CTRL_PID_POSITION, CTRL_FUTURE_OTHER };
+enum ControlMode { CTRL_NONE, CTRL_PID_POSITION, CTRL_SEQUENCE, CTRL_FUTURE_OTHER };
 
 // Estructura para almacenar los Taos en la tabla
 struct PIDGains {
@@ -29,10 +29,17 @@ private:
     uint32_t _lastTime;
     ControlMode _currentMode;
 
+    // Variables para el generador de secuencias (comando F)
+    float _seqAngles[20];
+    int _seqCount;
+    int _seqIndex;
+    uint32_t _seqTimeMs;
+    uint32_t _lastSeqTimeMs;
+
     // Variables físicas medibles del aeropéndulo
     float _plantVoltage;
     float _J, _m1, _m2, _l1, _l2, _b, _mgl;
-    float _slopeTorque1, _slopeTorque2;
+    float _slopeTorque1, _slopeTorque2, _b_mot;
 
     // Métodos de controladores específicos
     void calcDynGains(float currentAngle);
@@ -56,6 +63,9 @@ public:
     
     // Configurador general de objetivos
     void setTarget(float targetAngle, float maxSpeedPWM, ControlMode mode);
+
+    // Configurador de secuencias de referencia (Comando F)
+    void setSequence(float* angles, int count, uint32_t timePerRefMs, float maxSpeedPWM);
     
     void stop();
 

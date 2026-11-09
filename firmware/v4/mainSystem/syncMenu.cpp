@@ -28,7 +28,10 @@ void SyncMenu::executeCommand(String input) {
     char cmd = input.charAt(0);
     
     if (cmd == 'Z' || cmd == 'z') {
-        _planta->calibrateSensors();
+        _controlador->stop();               // Detiene el PID o la Secuencia activa
+        _planta->stopProfile();             // Detiene cualquier rampa en curso
+        _planta->applyMotor(0.0, 0, false); // Apaga el motor para evitar movimientos
+        _planta->calibrateSensors();        // Calcula el nuevo cero con el sistema en reposo
     }
     else if (cmd == 'S' || cmd == 's') { 
         _controlador->stop(); 
@@ -52,6 +55,30 @@ void SyncMenu::executeCommand(String input) {
             target = input.substring(1).toFloat();
         }
         _controlador->setTarget(target, maxPWM, CTRL_PID_POSITION);
+    }
+    else if (cmd == 'F' || cmd == 'f') { 
+        _planta->stopProfile(); 
+        
+        float angles[20];
+        int count = 0;
+        int startIdx = 1;
+        int commaIdx = input.indexOf(',', startIdx);
+        
+        // Extraemos todos los ángulos separados por comas
+        while (commaIdx != -1 && count < 20) {
+            angles[count] = input.substring(startIdx, commaIdx).toFloat();
+            count++;
+            startIdx = commaIdx + 1;
+            commaIdx = input.indexOf(',', startIdx);
+        }
+        
+        // El último valor que queda después de la última coma es el tiempo
+        if (startIdx < input.length() && count > 0) {
+            uint32_t t_ms = input.substring(startIdx).toInt();
+            float maxPWM = 100.0; // Se asume velocidad máxima para la secuencia
+            
+            _controlador->setSequence(angles, count, t_ms, maxPWM);
+        }
     }
     else if (cmd == 'H' || cmd == 'h' || cmd == 'A' || cmd == 'a') {
         _controlador->stop(); 

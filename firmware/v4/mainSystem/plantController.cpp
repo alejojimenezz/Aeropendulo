@@ -9,7 +9,7 @@ plantController::plantController(plantStatus* plantaPtr) {
     _integral = 0;
     
     // Tiempo de muestreo matemático fundamental (Ts = 10ms -> 100Hz)
-    _Ts = 0.01f; 
+    _Ts = 0.004f; 
 
     // Variables físicas medibles
     _plantVoltage = 5.25f;
@@ -22,9 +22,9 @@ plantController::plantController(plantStatus* plantaPtr) {
     _mgl = 0.0267f;
 
     // Pendientes predefinidas y valores LUT
-    _slopeTorque1 = 0.00901f;
+    _slopeTorque1 = 0.008107f;//0.00901f;
     _slopeTorque2 = 0.00270f;
-
+    _b_mot = -0.002372f;
     // Inicializar la tabla con valores por defecto
     setGlobalPID(1.0, 0.0, 0.0);
 }
@@ -70,6 +70,25 @@ void plantController::setTarget(float targetAngle, float maxSpeedPWM, ControlMod
     _currentMode = mode;
 }
 
+void plantController::setSequence(float* angles, int count, uint32_t timePerRefMs, float maxSpeedPWM) {
+    _seqCount = (count > 20) ? 20 : count; // Protegemos la memoria (máximo 20 pasos)
+    for(int i = 0; i < _seqCount; i++) {
+        _seqAngles[i] = angles[i];
+    }
+    _seqTimeMs = timePerRefMs;
+    _maxSpeedPWM = (maxSpeedPWM > 100.0f) ? 100.0f : maxSpeedPWM;
+    _seqIndex = 0;
+    
+    // Inicializamos el PID con el primer ángulo
+    _setpointAngle = _seqAngles[0];
+    _errorPrev = _setpointAngle - _planta->angulo_as5600;
+    _integral = 0.0f;
+    
+    _lastSeqTimeMs = millis();
+    _lastTime = micros(); // Para el delta de tiempo del PID
+    _currentMode = CTRL_SEQUENCE;
+}
+
 void plantController::stop() {
     _currentMode = CTRL_NONE;
 }
@@ -77,7 +96,18 @@ void plantController::stop() {
 void plantController::update() {
     if (_currentMode == CTRL_NONE) return;
 
-    if (_currentMode == CTRL_PID_POSITION) {
+    if (_currentMode == CTRL_SEQUENCE) {
+        // Verificamos si ya pasó el tiempo para saltar a la siguiente referencia
+        if (millis() - _lastSeqTimeMs >= _seqTimeMs) {
+            _lastSeqTimeMs = millis();
+            if (_seqIndex < _seqCount - 1) { // Si no hemos llegado al final
+                _seqIndex++;
+                _setpointAngle = _seqAngles[_seqIndex];
+            }
+        }
+        PIDcontroller();
+    } 
+    else if (_currentMode == CTRL_PID_POSITION) {
         PIDcontroller();
     }
 }
@@ -101,7 +131,7 @@ float plantController::Voltage2Torque(float voltage) {
     } else {
         // Corrección: Función lineal continua (y = mx + b)
         // Sumamos el torque límite de la primera fase (2.4 * slope1) al exceso de voltaje
-        torque = (2.4f * _slopeTorque1) + ((v_abs - 2.4f) * _slopeTorque2);
+        torque = (2.4f * _slopeTorque1) + _b_mot; //+ ((v_abs - 2.4f) * _slopeTorque2);
     }
     return (voltage < 0.0f) ? -torque : torque; // Mantiene el sentido de empuje
 }
@@ -151,7 +181,7 @@ void plantController::PIDcontroller() {
     
     // Filtro del Giroscopio
     static float filtered_gz = 0.0f;
-    float alpha = 0.05f; 
+    float alpha = 0.71f; 
     filtered_gz = (alpha * (-_planta->gz)) + ((1.0f - alpha) * filtered_gz);
     float theta_dot = filtered_gz; 
 
