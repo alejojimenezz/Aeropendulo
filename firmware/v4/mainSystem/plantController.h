@@ -7,6 +7,10 @@
 // Lista de modos para el método setTarget
 enum ControlMode { CTRL_NONE, CTRL_PID_POSITION, CTRL_SEQUENCE, CTRL_FUTURE_OTHER };
 
+// Codigo de 'estado' que se transmite por telemetria mientras corre una secuencia (comando F)
+// (0 = ninguno, 1 = escalon, 2 = rampa -> definidos por MotorProfile en plantStatus.h)
+const uint8_t ESTADO_SECUENCIA = 3;
+
 // Estructura para almacenar los Taos en la tabla
 struct PIDGains {
     float K;
@@ -71,6 +75,9 @@ public:
 
     // Referencia activa (NAN si el PID no esta controlando)
     float getSetpoint() const { return (_currentMode == CTRL_NONE) ? NAN : _setpointAngle; }
+
+    // true mientras la secuencia de referencias (comando F) esta en curso
+    bool isSequenceActive() const { return _currentMode == CTRL_SEQUENCE; }
     
     // Despachador maestro
     void update(); 

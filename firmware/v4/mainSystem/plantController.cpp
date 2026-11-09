@@ -12,7 +12,7 @@ plantController::plantController(plantStatus* plantaPtr) {
     _Ts = 0.004f; 
 
     // Variables físicas medibles
-    _plantVoltage = 5.25f;
+    _plantVoltage = 5.3f;
     _J = 4.4823e-04f;
     _m1 = 0.0120f;
     _m2 = 0.0120f;
@@ -71,6 +71,7 @@ void plantController::setTarget(float targetAngle, float maxSpeedPWM, ControlMod
 }
 
 void plantController::setSequence(float* angles, int count, uint32_t timePerRefMs, float maxSpeedPWM) {
+    if (count <= 0 || timePerRefMs == 0) return; // Secuencia invalida: se ignora
     _seqCount = (count > 20) ? 20 : count; // Protegemos la memoria (máximo 20 pasos)
     for(int i = 0; i < _seqCount; i++) {
         _seqAngles[i] = angles[i];
@@ -97,12 +98,18 @@ void plantController::update() {
     if (_currentMode == CTRL_NONE) return;
 
     if (_currentMode == CTRL_SEQUENCE) {
-        // Verificamos si ya pasó el tiempo para saltar a la siguiente referencia
+        // Verificamos si ya pasó el tiempo de la referencia actual.
+        // Se suma _seqTimeMs (en vez de millis()) para no acumular deriva entre pasos.
         if (millis() - _lastSeqTimeMs >= _seqTimeMs) {
-            _lastSeqTimeMs = millis();
-            if (_seqIndex < _seqCount - 1) { // Si no hemos llegado al final
+            _lastSeqTimeMs += _seqTimeMs;
+            if (_seqIndex < _seqCount - 1) {
                 _seqIndex++;
                 _setpointAngle = _seqAngles[_seqIndex];
+            } else {
+                // Terminó la última referencia: fin de la secuencia (la telemetría vuelve a estado 0).
+                // El PID sigue sosteniendo el último ángulo para que la planta no caiga;
+                // se detiene con S / E como siempre.
+                _currentMode = CTRL_PID_POSITION;
             }
         }
         PIDcontroller();

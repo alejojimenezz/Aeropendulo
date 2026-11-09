@@ -35,20 +35,21 @@ cabeceras_csv = [
     "Gyr_X", "Gyr_Y", "Gyr_Z", "Referencia", "Estado"
 ]
 
-# CSV del experimento (solo rampa/escalon): tiempo relativo desde la 1ra muestra
+# CSV del experimento (escalon / rampa / secuencia F): tiempo relativo desde la 1ra muestra
 cabeceras_exp = ["Tiempo_s"] + cabeceras_csv[:-1]
-NOMBRES_ESTADO = {1: "escalon", 2: "rampa"}
+NOMBRES_ESTADO = {1: "escalon", 2: "rampa", 3: "secuencia"}
 
 # Estado del experimento en curso
 archivo_exp = None
 escritor_exp = None
+estado_exp = 0
 ts_inicio_exp = 0
 nombre_exp = ""
 muestras_exp = 0
 contador_exp = 0
 
 def abrir_experimento(estado, timestamp):
-    global archivo_exp, escritor_exp, ts_inicio_exp, nombre_exp, muestras_exp, contador_exp
+    global archivo_exp, escritor_exp, estado_exp, ts_inicio_exp, nombre_exp, muestras_exp, contador_exp
     contador_exp += 1
     fecha = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     etiqueta = NOMBRES_ESTADO.get(estado, f"perfil{estado}")
@@ -57,17 +58,19 @@ def abrir_experimento(estado, timestamp):
     escritor_exp = csv.writer(archivo_exp)
     escritor_exp.writerow(cabeceras_exp)
     ts_inicio_exp = timestamp
+    estado_exp = estado
     muestras_exp = 0
     sys.stdout.write(f"\n[EXP] Inicio de {etiqueta} -> {os.path.basename(nombre_exp)}\n")
 
 def cerrar_experimento():
-    global archivo_exp, escritor_exp
+    global archivo_exp, escritor_exp, estado_exp
     if archivo_exp is not None:
         archivo_exp.flush()
         archivo_exp.close()
         sys.stdout.write(f"\n[EXP] Fin. {muestras_exp} muestras guardadas en {os.path.basename(nombre_exp)}\n")
     archivo_exp = None
     escritor_exp = None
+    estado_exp = 0
 
 try:
     esp32 = serial.Serial(PUERTO, BAUD_RATE)
@@ -87,6 +90,7 @@ try:
         print(" K º,k,ti,td  -> PID en Ángulo(Ej: K90,3.5,0.3,0.05)")
         print(" P xx,yy      -> PID: Ir a xx° con yy% PWM (Ej: P90,50)")
         print(" R paso,t_ms[,max] -> RAMPA: sube paso% cada t_ms ms (Ej: R5,2000 o R5,2000,80)")
+        print(" F a1,a2,..,an,t_ms -> SECUENCIA PID: cada ref. dura t_ms (Ej: F20,30,50,70,10,2000)")
         print(" Hxx / Axx    -> MANUAL: Horario/Antihorario xx%")
         print(" S / E        -> Stop Suave / Paro de Emergencia")
         print(" Z            -> Calibrar Ceros de Sensores")
@@ -119,10 +123,12 @@ try:
                             archivo_csv.flush()  # permite al visualizador leer casi en tiempo real
 
                         # --- CSV de experimento: sincronizado con el perfil del ESP32 ---
+                        # Si cambia el tipo de perfil (p. ej. rampa -> secuencia sin pasar por 0),
+                        # se cierra el CSV anterior y se abre uno nuevo.
+                        if archivo_exp is not None and estado != estado_exp:
+                            cerrar_experimento()
                         if estado != 0 and archivo_exp is None:
                             abrir_experimento(estado, timestamp)
-                        elif estado == 0 and archivo_exp is not None:
-                            cerrar_experimento()
 
                         if archivo_exp is not None:
                             t_rel = ((timestamp - ts_inicio_exp) & 0xFFFFFFFF) / 1e6  # tolera overflow de micros()

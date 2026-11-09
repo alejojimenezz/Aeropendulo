@@ -57,6 +57,8 @@ void SyncMenu::executeCommand(String input) {
         _controlador->setTarget(target, maxPWM, CTRL_PID_POSITION);
     }
     else if (cmd == 'F' || cmd == 'f') { 
+        // Formato: F<ang1>,<ang2>,...,<angN>,<t_ms>   (max. 20 referencias)
+        // Ej: F20,30,50,70,10,2000 -> 20°,30°,50°,70°,10° con 2000 ms en cada una
         _planta->stopProfile(); 
         
         float angles[20];
@@ -72,12 +74,13 @@ void SyncMenu::executeCommand(String input) {
             commaIdx = input.indexOf(',', startIdx);
         }
         
-        // El último valor que queda después de la última coma es el tiempo
-        if (startIdx < input.length() && count > 0) {
+        // El último valor que queda después de la última coma es el tiempo.
+        // Si aún quedaban comas (commaIdx != -1) hubo más de 20 referencias: se rechaza.
+        if (commaIdx == -1 && count > 0 && startIdx < (int)input.length()) {
             uint32_t t_ms = input.substring(startIdx).toInt();
             float maxPWM = 100.0; // Se asume velocidad máxima para la secuencia
             
-            _controlador->setSequence(angles, count, t_ms, maxPWM);
+            _controlador->setSequence(angles, count, t_ms, maxPWM); // ignora t_ms = 0
         }
     }
     else if (cmd == 'H' || cmd == 'h' || cmd == 'A' || cmd == 'a') {
@@ -149,7 +152,10 @@ void SyncMenu::transmitData(uint32_t frequencyHz) {
         packet.gz = _planta->gz;
         
         packet.ref = _controlador->getSetpoint();
-        packet.estado = (uint8_t)_planta->getProfile();
+        // Estado: perfil de motor (1=escalon, 2=rampa) o secuencia de referencias PID (3)
+        uint8_t estado = (uint8_t)_planta->getProfile();
+        if (estado == 0 && _controlador->isSequenceActive()) estado = ESTADO_SECUENCIA;
+        packet.estado = estado;
         
         packet.footer = 0xCC;
 
