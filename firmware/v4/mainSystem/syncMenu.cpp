@@ -92,11 +92,16 @@ void SyncMenu::executeCommand(String input) {
             _planta->applyMotor(pwr, dir, false);
         }
     }
-    else if (cmd == 'R' || cmd == 'r') {
+    else if (cmd == 'R' || cmd == 'r' || cmd == 'D' || cmd == 'd' || cmd == 'T' || cmd == 't') {
         _controlador->stop(); 
         _planta->stopProfile(); 
         
-        // Formato: R<paso%>,<t_escalon_ms>[,<pwm_max%>]
+        // Formato: R|D|T<paso%>,<t_escalon_ms>[,<pwm_max%>]
+        //   R = rampa ascendente, D = descendente, T = sube y baja (triangular)
+        MotorProfile tipo = PROFILE_RAMP;
+        if (cmd == 'D' || cmd == 'd') tipo = PROFILE_RAMP_DOWN;
+        else if (cmd == 'T' || cmd == 't') tipo = PROFILE_RAMP_UPDOWN;
+
         int c1 = input.indexOf(',');
         int c2 = input.indexOf(',', c1 + 1);
 
@@ -105,7 +110,7 @@ void SyncMenu::executeCommand(String input) {
             uint32_t stepTime  = (c2 != -1) ? input.substring(c1 + 1, c2).toInt()
                                             : input.substring(c1 + 1).toInt();
             float maxDuty      = (c2 != -1) ? input.substring(c2 + 1).toFloat() : 100.0f;
-            _planta->startRamp(stepSize, stepTime, maxDuty, -1);
+            _planta->startRamp(stepSize, stepTime, maxDuty, -1, tipo);
         }
     }
     else if (cmd == 'K' || cmd == 'k') {
@@ -152,7 +157,7 @@ void SyncMenu::transmitData(uint32_t frequencyHz) {
         packet.gz = _planta->gz;
         
         packet.ref = _controlador->getSetpoint();
-        // Estado: perfil de motor (1=escalon, 2=rampa) o secuencia de referencias PID (3)
+        // Estado: perfil de motor (1=escalon, 2/3/4=rampas) o secuencia de referencias PID (5)
         uint8_t estado = (uint8_t)_planta->getProfile();
         if (estado == 0 && _controlador->isSequenceActive()) estado = ESTADO_SECUENCIA;
         packet.estado = estado;

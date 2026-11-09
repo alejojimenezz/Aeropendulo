@@ -22,9 +22,9 @@ plantController::plantController(plantStatus* plantaPtr) {
     _mgl = 0.0267f;
 
     // Pendientes predefinidas y valores LUT
-    _slopeTorque1 = 0.008107f;//0.00901f;
+    _slopeTorque1 = 0.0121f;//0.008107f;//0.00901f;
     _slopeTorque2 = 0.00270f;
-    _b_mot = -0.002372f;
+    _b_mot = -0.0081f;//-0.0065//-0.002372f;
     // Inicializar la tabla con valores por defecto
     setGlobalPID(1.0, 0.0, 0.0);
 }

@@ -6,7 +6,8 @@
 #include "systemConfig.h"
 
 // Enumerador para la máquina de estados de los perfiles
-enum MotorProfile { PROFILE_NONE, PROFILE_STEP, PROFILE_RAMP };
+// PROFILE_RAMP = ascendente, PROFILE_RAMP_DOWN = descendente, PROFILE_RAMP_UPDOWN = sube y baja
+enum MotorProfile { PROFILE_NONE, PROFILE_STEP, PROFILE_RAMP, PROFILE_RAMP_DOWN, PROFILE_RAMP_UPDOWN };
 
 class plantStatus {
 private:
@@ -27,6 +28,10 @@ private:
     int _profileDirection;
     float _profileStepSize;
     uint32_t _profileStepTime;   // Duracion de cada escalon (ms)
+    uint32_t _profileNumLevels;  // Niveles distintos de la rampa ascendente (N)
+
+    bool _isRampProfile() const;
+    float _rampDuty(uint32_t stepIndex) const;  // PWM del escalon 'stepIndex' segun el tipo de rampa
 
 public:
     float angulo_as5600; 
@@ -41,10 +46,14 @@ public:
     // Generador de Perfiles no bloqueantes
     void stopProfile();
     void startStep(float targetDuty, int direction, uint32_t duration_ms);
-    // Rampa escalonada: sube 'stepSize' % cada 'stepTime_ms' hasta 'maxDuty' (el ultimo escalon se satura a maxDuty)
-    void startRamp(float stepSize, uint32_t stepTime_ms, float maxDuty = 100.0f, int direction = -1);
+    // Rampa escalonada con niveles stepSize, 2*stepSize, ... hasta maxDuty (el ultimo se satura a maxDuty).
+    //   type = PROFILE_RAMP        -> asciende:   L1 ... LN
+    //   type = PROFILE_RAMP_DOWN   -> desciende:  LN ... L1
+    //   type = PROFILE_RAMP_UPDOWN -> sube y baja: L1 ... LN ... L1 (el pico dura un solo escalon)
+    void startRamp(float stepSize, uint32_t stepTime_ms, float maxDuty = 100.0f, int direction = -1,
+                   MotorProfile type = PROFILE_RAMP);
     void updateProfile();
-    MotorProfile getProfile() const { return _currentProfile; } // 0=NONE, 1=STEP, 2=RAMP
+    MotorProfile getProfile() const { return _currentProfile; } // 0=NONE, 1=STEP, 2=RAMP, 3=RAMP_DOWN, 4=RAMP_UPDOWN
     
     // Métodos de Sensores
     void readAS5600(); 

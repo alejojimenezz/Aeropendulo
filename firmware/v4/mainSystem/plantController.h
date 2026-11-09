@@ -8,8 +8,9 @@
 enum ControlMode { CTRL_NONE, CTRL_PID_POSITION, CTRL_SEQUENCE, CTRL_FUTURE_OTHER };
 
 // Codigo de 'estado' que se transmite por telemetria mientras corre una secuencia (comando F)
-// (0 = ninguno, 1 = escalon, 2 = rampa -> definidos por MotorProfile en plantStatus.h)
-const uint8_t ESTADO_SECUENCIA = 3;
+// (0 = ninguno, 1 = escalon, 2 = rampa, 3 = rampa descendente, 4 = rampa triangular
+//  -> definidos por MotorProfile en plantStatus.h; la secuencia usa el siguiente codigo libre)
+const uint8_t ESTADO_SECUENCIA = 5;
 
 // Estructura para almacenar los Taos en la tabla
 struct PIDGains {

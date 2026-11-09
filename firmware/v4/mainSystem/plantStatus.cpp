@@ -156,24 +156,44 @@ void plantStatus::startStep(float targetDuty, int direction, uint32_t duration_m
     applyMotor(_profileStartDuty, _profileDirection, false);
 }
 
-// Rampa escalonada: niveles stepSize, 2*stepSize, ... hasta maxDuty, cada uno durante stepTime_ms
-void plantStatus::startRamp(float stepSize, uint32_t stepTime_ms, float maxDuty, int direction) {
+// Rampa escalonada: niveles Lk = min(k*stepSize, maxDuty), k = 1..N, cada uno durante stepTime_ms
+bool plantStatus::_isRampProfile() const {
+    return _currentProfile == PROFILE_RAMP ||
+           _currentProfile == PROFILE_RAMP_DOWN ||
+           _currentProfile == PROFILE_RAMP_UPDOWN;
+}
+
+float plantStatus::_rampDuty(uint32_t stepIndex) const {
+    uint32_t N = _profileNumLevels;
+    uint32_t level;  // indice 0..N-1 dentro de los niveles ascendentes
+    switch (_currentProfile) {
+        case PROFILE_RAMP_DOWN:   level = N - 1 - stepIndex; break;
+        case PROFILE_RAMP_UPDOWN: level = (stepIndex < N) ? stepIndex : (2 * N - 2 - stepIndex); break;
+        default:                  level = stepIndex; break;   // PROFILE_RAMP
+    }
+    float duty = (level + 1) * _profileStepSize;
+    return (duty > _profileEndDuty) ? _profileEndDuty : duty;
+}
+
+void plantStatus::startRamp(float stepSize, uint32_t stepTime_ms, float maxDuty, int direction, MotorProfile type) {
     // Evitar divisiones por cero o parametros invalidos
     _profileStepSize = (stepSize > 0.0f) ? stepSize : 1.0f;
     _profileStepTime = (stepTime_ms > 0) ? stepTime_ms : 1000;
     if (maxDuty > 100.0f) maxDuty = 100.0f;
     if (maxDuty < _profileStepSize) maxDuty = _profileStepSize;
+    if (type != PROFILE_RAMP_DOWN && type != PROFILE_RAMP_UPDOWN) type = PROFILE_RAMP;
 
-    uint32_t numSteps = (uint32_t)ceilf(maxDuty / _profileStepSize - 1e-4f);
+    _profileNumLevels = (uint32_t)ceilf(maxDuty / _profileStepSize - 1e-4f);
+    uint32_t totalSteps = (type == PROFILE_RAMP_UPDOWN) ? (2 * _profileNumLevels - 1) : _profileNumLevels;
 
-    _currentProfile = PROFILE_RAMP;
-    _profileStartDuty = _profileStepSize;   // Primer escalon
+    _currentProfile = type;
     _profileEndDuty = maxDuty;              // Tope de PWM
     _profileDirection = direction;
-    _profileDuration = numSteps * _profileStepTime;  // Duracion total derivada
+    _profileDuration = totalSteps * _profileStepTime;  // Duracion total derivada
     _profileStartTime = millis();
 
-    applyMotor(_profileStartDuty > maxDuty ? maxDuty : _profileStartDuty, _profileDirection, false);
+    _profileStartDuty = _rampDuty(0);       // Primer escalon (depende del tipo de rampa)
+    applyMotor(_profileStartDuty, _profileDirection, false);
 }
 
 void plantStatus::updateProfile() {
@@ -189,7 +209,7 @@ void plantStatus::updateProfile() {
         return;
     }
 
-    if (_currentProfile == PROFILE_RAMP) {
+    if (_isRampProfile()) {
         uint32_t updateInterval_ms = _Ts_ms;
         static uint32_t lastProfileUpdate = 0;
 
@@ -198,9 +218,7 @@ void plantStatus::updateProfile() {
             lastProfileUpdate = currentMillis;
 
             // Escalon actual segun el tiempo transcurrido
-            uint32_t stepIndex = elapsed / _profileStepTime;
-            float steppedDuty = (stepIndex + 1) * _profileStepSize;
-            if (steppedDuty > _profileEndDuty) steppedDuty = _profileEndDuty;
+            float steppedDuty = _rampDuty(elapsed / _profileStepTime);
 
             // Aplicar solo si cambio el escalon
             if (fabs(currentDuty - steppedDuty) >= 0.01f) {
