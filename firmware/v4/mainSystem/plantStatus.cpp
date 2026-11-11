@@ -96,20 +96,19 @@ void plantStatus::updateSensors() {
 // ---------- Sensor Reading y Calibration ----------
 
 void plantStatus::calibrateSensors() {
-    Serial.println("Iniciando calibracion de sensores. Mantenga el sistema quieto...");
-    
+    // Ceros instantáneos sin Serial.print ni bloqueos de delay
     offset_angulo = 0; offset_ax = 0; offset_ay = 0; offset_az = 0;
     offset_gx = 0; offset_gy = 0; offset_gz = 0;
 
     long sum_raw_angle = 0;
-    int num_samples = 100;
+    int num_samples = 20; 
     
     for (int i = 0; i < num_samples; i++) {
-        // Leemos el RAW_ANGLE para el AS5600
         Wire.beginTransmission(0x36); 
         Wire.write(0x0C);             
         Wire.endTransmission(false);
         Wire.requestFrom((uint16_t)0x36, (uint8_t)2, true);
+        
         if (Wire.available() == 2) {
             uint16_t rawAngle = Wire.read() << 8;
             rawAngle |= Wire.read();
@@ -128,17 +127,15 @@ void plantStatus::calibrateSensors() {
         offset_gy += gyro.gyro.y; 
         offset_gz += gyro.gyro.z;
         
-        delay(10);
+        // El delay(10) fue eliminado para evitar desincronizar la telemetría
     }
 
     offset_ax /= num_samples; offset_ay /= num_samples; offset_az /= num_samples;
     offset_gx /= num_samples; offset_gy /= num_samples; offset_gz /= num_samples;
     
-    // Calibración por software limpia:
     uint16_t avg_raw_angle = sum_raw_angle / num_samples;
     offset_angulo = (avg_raw_angle * 360.0f) / 4096.0f;
-    
-    Serial.println("Calibracion por software finalizada.");
+
 }
 
 // ---------- Generador de Perfiles ----------
@@ -159,24 +156,44 @@ void plantStatus::startStep(float targetDuty, int direction, uint32_t duration_m
     applyMotor(_profileStartDuty, _profileDirection, false);
 }
 
-// Rampa escalonada: niveles stepSize, 2*stepSize, ... hasta maxDuty, cada uno durante stepTime_ms
-void plantStatus::startRamp(float stepSize, uint32_t stepTime_ms, float maxDuty, int direction) {
+// Rampa escalonada: niveles Lk = min(k*stepSize, maxDuty), k = 1..N, cada uno durante stepTime_ms
+bool plantStatus::_isRampProfile() const {
+    return _currentProfile == PROFILE_RAMP ||
+           _currentProfile == PROFILE_RAMP_DOWN ||
+           _currentProfile == PROFILE_RAMP_UPDOWN;
+}
+
+float plantStatus::_rampDuty(uint32_t stepIndex) const {
+    uint32_t N = _profileNumLevels;
+    uint32_t level;  // indice 0..N-1 dentro de los niveles ascendentes
+    switch (_currentProfile) {
+        case PROFILE_RAMP_DOWN:   level = N - 1 - stepIndex; break;
+        case PROFILE_RAMP_UPDOWN: level = (stepIndex < N) ? stepIndex : (2 * N - 2 - stepIndex); break;
+        default:                  level = stepIndex; break;   // PROFILE_RAMP
+    }
+    float duty = (level + 1) * _profileStepSize;
+    return (duty > _profileEndDuty) ? _profileEndDuty : duty;
+}
+
+void plantStatus::startRamp(float stepSize, uint32_t stepTime_ms, float maxDuty, int direction, MotorProfile type) {
     // Evitar divisiones por cero o parametros invalidos
     _profileStepSize = (stepSize > 0.0f) ? stepSize : 1.0f;
     _profileStepTime = (stepTime_ms > 0) ? stepTime_ms : 1000;
     if (maxDuty > 100.0f) maxDuty = 100.0f;
     if (maxDuty < _profileStepSize) maxDuty = _profileStepSize;
+    if (type != PROFILE_RAMP_DOWN && type != PROFILE_RAMP_UPDOWN) type = PROFILE_RAMP;
 
-    uint32_t numSteps = (uint32_t)ceilf(maxDuty / _profileStepSize - 1e-4f);
+    _profileNumLevels = (uint32_t)ceilf(maxDuty / _profileStepSize - 1e-4f);
+    uint32_t totalSteps = (type == PROFILE_RAMP_UPDOWN) ? (2 * _profileNumLevels - 1) : _profileNumLevels;
 
-    _currentProfile = PROFILE_RAMP;
-    _profileStartDuty = _profileStepSize;   // Primer escalon
+    _currentProfile = type;
     _profileEndDuty = maxDuty;              // Tope de PWM
     _profileDirection = direction;
-    _profileDuration = numSteps * _profileStepTime;  // Duracion total derivada
+    _profileDuration = totalSteps * _profileStepTime;  // Duracion total derivada
     _profileStartTime = millis();
 
-    applyMotor(_profileStartDuty > maxDuty ? maxDuty : _profileStartDuty, _profileDirection, false);
+    _profileStartDuty = _rampDuty(0);       // Primer escalon (depende del tipo de rampa)
+    applyMotor(_profileStartDuty, _profileDirection, false);
 }
 
 void plantStatus::updateProfile() {
@@ -192,7 +209,7 @@ void plantStatus::updateProfile() {
         return;
     }
 
-    if (_currentProfile == PROFILE_RAMP) {
+    if (_isRampProfile()) {
         uint32_t updateInterval_ms = _Ts_ms;
         static uint32_t lastProfileUpdate = 0;
 
@@ -201,9 +218,7 @@ void plantStatus::updateProfile() {
             lastProfileUpdate = currentMillis;
 
             // Escalon actual segun el tiempo transcurrido
-            uint32_t stepIndex = elapsed / _profileStepTime;
-            float steppedDuty = (stepIndex + 1) * _profileStepSize;
-            if (steppedDuty > _profileEndDuty) steppedDuty = _profileEndDuty;
+            float steppedDuty = _rampDuty(elapsed / _profileStepTime);
 
             // Aplicar solo si cambio el escalon
             if (fabs(currentDuty - steppedDuty) >= 0.01f) {

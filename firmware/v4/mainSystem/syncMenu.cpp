@@ -28,7 +28,10 @@ void SyncMenu::executeCommand(String input) {
     char cmd = input.charAt(0);
     
     if (cmd == 'Z' || cmd == 'z') {
-        _planta->calibrateSensors();
+        _controlador->stop();               // Detiene el PID o la Secuencia activa
+        _planta->stopProfile();             // Detiene cualquier rampa en curso
+        _planta->applyMotor(0.0, 0, false); // Apaga el motor para evitar movimientos
+        _planta->calibrateSensors();        // Calcula el nuevo cero con el sistema en reposo
     }
     else if (cmd == 'S' || cmd == 's') { 
         _controlador->stop(); 
@@ -53,6 +56,33 @@ void SyncMenu::executeCommand(String input) {
         }
         _controlador->setTarget(target, maxPWM, CTRL_PID_POSITION);
     }
+    else if (cmd == 'F' || cmd == 'f') { 
+        // Formato: F<ang1>,<ang2>,...,<angN>,<t_ms>   (max. 20 referencias)
+        // Ej: F20,30,50,70,10,2000 -> 20°,30°,50°,70°,10° con 2000 ms en cada una
+        _planta->stopProfile(); 
+        
+        float angles[20];
+        int count = 0;
+        int startIdx = 1;
+        int commaIdx = input.indexOf(',', startIdx);
+        
+        // Extraemos todos los ángulos separados por comas
+        while (commaIdx != -1 && count < 20) {
+            angles[count] = input.substring(startIdx, commaIdx).toFloat();
+            count++;
+            startIdx = commaIdx + 1;
+            commaIdx = input.indexOf(',', startIdx);
+        }
+        
+        // El último valor que queda después de la última coma es el tiempo.
+        // Si aún quedaban comas (commaIdx != -1) hubo más de 20 referencias: se rechaza.
+        if (commaIdx == -1 && count > 0 && startIdx < (int)input.length()) {
+            uint32_t t_ms = input.substring(startIdx).toInt();
+            float maxPWM = 100.0; // Se asume velocidad máxima para la secuencia
+            
+            _controlador->setSequence(angles, count, t_ms, maxPWM); // ignora t_ms = 0
+        }
+    }
     else if (cmd == 'H' || cmd == 'h' || cmd == 'A' || cmd == 'a') {
         _controlador->stop(); 
         _planta->stopProfile(); 
@@ -62,11 +92,16 @@ void SyncMenu::executeCommand(String input) {
             _planta->applyMotor(pwr, dir, false);
         }
     }
-    else if (cmd == 'R' || cmd == 'r') {
+    else if (cmd == 'R' || cmd == 'r' || cmd == 'D' || cmd == 'd' || cmd == 'T' || cmd == 't') {
         _controlador->stop(); 
         _planta->stopProfile(); 
         
-        // Formato: R<paso%>,<t_escalon_ms>[,<pwm_max%>]
+        // Formato: R|D|T<paso%>,<t_escalon_ms>[,<pwm_max%>]
+        //   R = rampa ascendente, D = descendente, T = sube y baja (triangular)
+        MotorProfile tipo = PROFILE_RAMP;
+        if (cmd == 'D' || cmd == 'd') tipo = PROFILE_RAMP_DOWN;
+        else if (cmd == 'T' || cmd == 't') tipo = PROFILE_RAMP_UPDOWN;
+
         int c1 = input.indexOf(',');
         int c2 = input.indexOf(',', c1 + 1);
 
@@ -75,7 +110,7 @@ void SyncMenu::executeCommand(String input) {
             uint32_t stepTime  = (c2 != -1) ? input.substring(c1 + 1, c2).toInt()
                                             : input.substring(c1 + 1).toInt();
             float maxDuty      = (c2 != -1) ? input.substring(c2 + 1).toFloat() : 100.0f;
-            _planta->startRamp(stepSize, stepTime, maxDuty, -1);
+            _planta->startRamp(stepSize, stepTime, maxDuty, -1, tipo);
         }
     }
     else if (cmd == 'K' || cmd == 'k') {
@@ -122,7 +157,10 @@ void SyncMenu::transmitData(uint32_t frequencyHz) {
         packet.gz = _planta->gz;
         
         packet.ref = _controlador->getSetpoint();
-        packet.estado = (uint8_t)_planta->getProfile();
+        // Estado: perfil de motor (1=escalon, 2/3/4=rampas) o secuencia de referencias PID (5)
+        uint8_t estado = (uint8_t)_planta->getProfile();
+        if (estado == 0 && _controlador->isSequenceActive()) estado = ESTADO_SECUENCIA;
+        packet.estado = estado;
         
         packet.footer = 0xCC;
 

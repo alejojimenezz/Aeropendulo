@@ -9,8 +9,9 @@ Uso:
 Sin argumento toma el registro_datos_*.csv mas reciente y, si empieza una
 captura nueva, cambia solo al archivo nuevo.
 
-Grafica 1: Angulo real y Referencia (eje izq., grados) + PWM (eje der., %)
-Grafica 2: Giroscopio Gyr_Z (rad/s)
+Grafica 1: Angulo real y Referencia (grados)
+Grafica 2: PWM (%) vs tiempo
+Grafica 3: Giroscopio Gyr_Z (rad/s)
 """
 import argparse
 import glob
@@ -133,23 +134,24 @@ class LectorCSV:
 class Visor:
     def __init__(self, lector):
         self.lector = lector
-        self.fig, (self.ax1, self.ax3) = plt.subplots(
-            2, 1, sharex=True, figsize=(11, 7), gridspec_kw={"height_ratios": [3, 2]})
-        self.ax2 = self.ax1.twinx()
+        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(
+            3, 1, sharex=True, figsize=(11, 9),
+            gridspec_kw={"height_ratios": [3, 2, 2]})
 
         self.l_ang, = self.ax1.plot([], [], color="tab:blue", lw=1.6, label="Ángulo real [°]")
         self.l_ref, = self.ax1.plot([], [], "--", color="tab:green", lw=1.6, label="Referencia [°]")
-        self.l_pwm, = self.ax2.plot([], [], color="tab:red", lw=1.2, alpha=0.75, label="PWM [%]")
+        self.l_pwm, = self.ax2.plot([], [], color="tab:red", lw=1.4, label="PWM [%]")
         self.l_gz, = self.ax3.plot([], [], color="tab:purple", lw=1.2, label="Gyr_Z [rad/s]")
 
         self.ax1.set_ylabel("Ángulo [°]")
-        self.ax2.set_ylabel("PWM [%]", color="tab:red")
+        self.ax2.set_ylabel("PWM [%]")
         self.ax2.set_ylim(-5, 105)
         self.ax3.set_ylabel("Gyro Z [rad/s]")
         self.ax3.set_xlabel("Tiempo [s]")
-        for ax in (self.ax1, self.ax3):
+        for ax in (self.ax1, self.ax2, self.ax3):
             ax.grid(True, linestyle="--", alpha=0.5)
-        self.ax1.legend(handles=[self.l_ang, self.l_ref, self.l_pwm], loc="upper left")
+        self.ax1.legend(handles=[self.l_ang, self.l_ref], loc="upper left")
+        self.ax2.legend(loc="upper left")
         self.ax3.legend(loc="upper left")
         self.ax1.set_title(" ", fontsize=10)   # reserva espacio para el titulo dinamico
         self.fig.tight_layout()
